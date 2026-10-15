@@ -1,0 +1,5 @@
+# The app lives in bar-pos-cloud/; build and publish from there.
+[build]
+  base = "bar-pos-cloud"
+  command = "npm install --include=dev && npm run build"
+  publish = "dist"

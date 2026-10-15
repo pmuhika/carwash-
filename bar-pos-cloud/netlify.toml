@@ -1,17 +1,17 @@
 # Netlify — GitHub continuous deploy
 [build]
-  command = "npm run build"
+  command = "npm install --include=dev && npm run build"
   publish = "dist"
 
 [build.environment]
   NODE_VERSION = "20"
+  ELECTRON_SKIP_BINARY_DOWNLOAD = "1"
 
 # SPA fallback — fixes Netlify "Page not found" on refresh / deep links
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
-  force = true
 
 [[headers]]
   for = "/sw.js"
