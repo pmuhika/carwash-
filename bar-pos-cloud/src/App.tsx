@@ -501,6 +501,7 @@ export default function App() {
       image_url: "",
       stock_unit: "unit",
       units_per_pack: "100",
+      active: true,
     }),
     [receiveProduct, setReceiveProduct] = useState(""),
     [receiveQty, setReceiveQty] = useState(""),
@@ -1722,6 +1723,7 @@ useEffect(() => {
       image_url: "",
       stock_unit: "unit",
       units_per_pack: "100",
+      active: true,
     });
     setShowProduct(true);
   }
@@ -1738,6 +1740,7 @@ useEffect(() => {
       image_url: p.image_url || "",
       stock_unit: p.stock_unit || "unit",
       units_per_pack: String(p.units_per_pack || 100),
+      active: p.active !== false,
     });
     setShowProduct(true);
   }
@@ -1756,6 +1759,7 @@ useEffect(() => {
       image_url: form.image_url || null,
       stock_unit: form.stock_unit,
       units_per_pack: Number(form.units_per_pack) || 100,
+      active: form.active !== false,
       ...(editing
         ? {}
         : {
@@ -1764,7 +1768,6 @@ useEffect(() => {
               (form.stock_unit === "barrel"
                 ? Number(form.units_per_pack || 100)
                 : 1),
-            active: true,
           }),
     };
     const result = editing
@@ -1782,6 +1785,37 @@ useEffect(() => {
     }
     setBusy(false);
   }
+
+  async function toggleProductActive(p: Product) {
+    if (!supabase || profile?.role !== "admin") return;
+    const next = !p.active;
+    setBusy(true);
+    setError("");
+    const { error } = await supabase
+      .from("products")
+      .update({ active: next })
+      .eq("id", p.id);
+    if (error) setError(error.message);
+    else {
+      setProducts((prev) => {
+        const list = prev.map((x) => (x.id === p.id ? { ...x, active: next } : x));
+        cacheProducts(list);
+        void idbCacheProducts(list);
+        return list;
+      });
+      flash(next ? `${p.name} is now active` : `${p.name} is now inactive (hidden from Sell, Inventory, Receive)`);
+      try {
+        await supabase.rpc("log_activity", {
+          p_action: next ? "product_activated" : "product_deactivated",
+          p_details: p.name,
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+    setBusy(false);
+  }
+
   async function receiveStock(e: React.FormEvent) {
     e.preventDefault();
     if (!canDoAction(profile, "receive_stock") && profile?.role !== "admin") {
@@ -1927,14 +1961,48 @@ useEffect(() => {
   async function handleImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 900000) {
-      setError("Image must be under 900 KB.");
+    if (file.size > 2500000) {
+      setError("Image must be under 2.5 MB.");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () =>
-      setForm((f) => ({ ...f, image_url: String(reader.result || "") }));
-    reader.readAsDataURL(file);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Could not read image"));
+        reader.readAsDataURL(file);
+      });
+      // Auto-frame to a uniform square so all product cards look consistent
+      const framed = await new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const size = 512;
+          const canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(dataUrl);
+            return;
+          }
+          ctx.fillStyle = "#0f172a";
+          ctx.fillRect(0, 0, size, size);
+          const scale = Math.min(size / img.width, size / img.height);
+          const w = img.width * scale;
+          const h = img.height * scale;
+          const x = (size - w) / 2;
+          const y = (size - h) / 2;
+          ctx.drawImage(img, x, y, w, h);
+          resolve(canvas.toDataURL("image/jpeg", 0.88));
+        };
+        img.onerror = () => reject(new Error("Invalid image"));
+        img.src = dataUrl;
+      });
+      setForm((f) => ({ ...f, image_url: framed }));
+      setError("");
+    } catch (err: any) {
+      setError(err?.message || "Image processing failed");
+    }
   }
   async function exportProducts() {
     const rows = products.map((p) => ({
@@ -4913,6 +4981,7 @@ th{background:#f8fafc} @media print{button{display:none}}</style></head><body>
                 products={products}
                 admin={isAdmin}
                 onEdit={openEditProduct}
+                onToggleActive={toggleProductActive}
               />
             </div>
           </>
@@ -4961,6 +5030,7 @@ th{background:#f8fafc} @media print{button{display:none}}</style></head><body>
                 products={products}
                 admin={isAdmin}
                 onEdit={openEditProduct}
+                onToggleActive={toggleProductActive}
               />
             </div>
           </>
@@ -6014,14 +6084,27 @@ th{background:#f8fafc} @media print{button{display:none}}</style></head><body>
             <label>
               Product image
               <input type="file" accept="image/*" onChange={handleImage} />
+              <small className="tiny muted">Images are auto-framed to a square so every product card looks the same.</small>
             </label>
             {form.image_url && (
-              <img
-                src={form.image_url}
-                alt="Product preview"
-                style={{ width: 100, height: 100, objectFit: "contain" }}
-              />
+              <div className="product-image-preview-frame">
+                <img src={form.image_url} alt="Product preview" />
+              </div>
             )}
+            <label className="active-toggle-row" style={{ display: "flex", alignItems: "center", gap: 12, flexDirection: "row" }}>
+              <input
+                type="checkbox"
+                checked={form.active !== false}
+                onChange={(e) => setForm({ ...form, active: e.target.checked })}
+                style={{ width: 22, height: 22 }}
+              />
+              <span>
+                <b>Product active</b>
+                <small className="muted" style={{ display: "block" }}>
+                  Off = hidden from Sell, Inventory, and Receive Stock (still listed under Products)
+                </small>
+              </span>
+            </label>
             <div className="form-row">
               <label>
                 Category
@@ -7237,10 +7320,12 @@ function ProductsTable({
   products,
   admin,
   onEdit,
+  onToggleActive,
 }: {
   products: Product[];
   admin: boolean;
   onEdit: (p: Product) => void;
+  onToggleActive?: (p: Product) => void;
 }) {
   return (
     <div className="table-scroll">
@@ -7252,18 +7337,23 @@ function ProductsTable({
             <th>Cost</th>
             <th>Sell price</th>
             <th>In stock</th>
-            <th>Status</th>
+            <th>Stock</th>
+            <th>Active</th>
             {admin && <th></th>}
           </tr>
         </thead>
         <tbody>
           {products.map((p) => (
-            <tr key={p.id}>
+            <tr key={p.id} className={p.active === false ? "row-inactive" : ""}>
               <td>
                 <div className="product-cell">
-                  <span className="mini-drink">
-                    <Beer size={16} />
-                  </span>
+                  {p.image_url ? (
+                    <img src={p.image_url} alt="" className="product-thumb product-thumb-framed" />
+                  ) : (
+                    <span className="mini-drink">
+                      <Beer size={16} />
+                    </span>
+                  )}
                   <span>
                     <b>{p.name}</b>
                     <small>{p.sku || "No SKU"}</small>
@@ -7286,6 +7376,22 @@ function ProductsTable({
                 >
                   {p.stock_qty <= p.min_stock ? "Low stock" : "In stock"}
                 </span>
+              </td>
+              <td>
+                {admin && onToggleActive ? (
+                  <button
+                    type="button"
+                    className={"status-toggle " + (p.active !== false ? "is-active" : "is-inactive")}
+                    onClick={() => onToggleActive(p)}
+                    title={p.active !== false ? "Click to deactivate" : "Click to activate"}
+                  >
+                    {p.active !== false ? "Active" : "Inactive"}
+                  </button>
+                ) : (
+                  <span className={"status " + (p.active !== false ? "status-ok" : "status-warn")}>
+                    {p.active !== false ? "Active" : "Inactive"}
+                  </span>
+                )}
               </td>
               {admin && (
                 <td>

@@ -1,17 +1,23 @@
 # Netlify — GitHub continuous deploy
+# Install ALL deps (including vite in devDependencies) before build.
+# Skip Electron binary download — website does not need it.
 [build]
   command = "npm install --include=dev && npm run build"
   publish = "dist"
 
 [build.environment]
   NODE_VERSION = "20"
+  # Prevent electron postinstall from downloading ~100MB binary on Netlify
   ELECTRON_SKIP_BINARY_DOWNLOAD = "1"
+  # Some CI environments omit devDependencies unless explicitly included
+  NPM_FLAGS = "--include=dev"
 
 # SPA fallback — fixes Netlify "Page not found" on refresh / deep links
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+  force = true
 
 [[headers]]
   for = "/sw.js"

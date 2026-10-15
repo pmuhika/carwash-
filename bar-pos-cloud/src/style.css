@@ -4623,3 +4623,88 @@ html.dark .health-warn { background: #7c2d12; color: #fed7aa; }
   min-height: 0;
   max-height: 48dvh;
 }
+
+/* Uniform product image framing across Sell / Receive / Inventory / Products */
+.card-image-wrap {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-height: 140px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #0f172a;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.card-image-wrap img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  object-position: center center !important;
+  display: block;
+}
+.product-card.sell-card .card-image-wrap,
+.product-card.stock-card .card-image-wrap {
+  aspect-ratio: 1 / 1;
+  max-height: 120px;
+  background: #0f172a;
+}
+html.dark .card-image-wrap {
+  background: #020617;
+}
+.product-thumb-framed {
+  width: 40px !important;
+  height: 40px !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  border-radius: 10px;
+  background: #0f172a;
+  flex-shrink: 0;
+}
+.product-image-preview-frame {
+  width: 140px;
+  height: 140px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0f172a;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border, #e2e8f0);
+}
+.product-image-preview-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+.status-toggle {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.status-toggle.is-active {
+  background: #d1fae5;
+  color: #065f46;
+}
+.status-toggle.is-inactive {
+  background: #fee2e2;
+  color: #991b1b;
+}
+html.dark .status-toggle.is-active {
+  background: #064e3b;
+  color: #a7f3d0;
+}
+html.dark .status-toggle.is-inactive {
+  background: #7f1d1d;
+  color: #fecaca;
+}
+tr.row-inactive {
+  opacity: 0.55;
+}
+tr.row-inactive:hover {
+  opacity: 0.85;
+}

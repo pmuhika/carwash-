@@ -124,3 +124,16 @@ HTTPS is provided by Netlify. Open the app once online after deploy so the shell
 - [ ] Open app once online, then turn off network — app still loads  
 - [ ] Complete a sale offline — status shows Offline / Pending; receipt has OFF- prefix  
 - [ ] Restore network — pending sales sync automatically  
+
+## Netlify / GitHub build note
+
+If the deploy fails with `vite: not found`, the build ran before dependencies were installed
+(or `NODE_ENV=production` skipped devDependencies). Use:
+
+```
+npm install --include=dev && npm run build
+```
+
+And set `ELECTRON_SKIP_BINARY_DOWNLOAD=1` so Electron is not downloaded for the website build.
+This is already set in `netlify.toml`.
+
