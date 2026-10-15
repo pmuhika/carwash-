@@ -1,0 +1,82 @@
+{
+  "name": "bar-pos-cloud",
+  "private": true,
+  "version": "2.0.1",
+  "description": "Sherehe POS \u2014 desktop and web bar point of sale",
+  "author": "Bar POS",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "desktop": "electron .",
+    "desktop:dev": "electron .",
+    "desktop:build": "node scripts/apply-branding.mjs && vite build && electron-builder",
+    "desktop:build:win": "node scripts/apply-branding.mjs && vite build && electron-builder --win",
+    "desktop:build:mac": "node scripts/apply-branding.mjs && vite build && electron-builder --mac",
+    "desktop:build:linux": "node scripts/apply-branding.mjs && vite build && electron-builder --linux",
+    "brand": "node scripts/apply-branding.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5",
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "~5.6.3",
+    "vite": "^6.0.1"
+  },
+  "build": {
+    "appId": "com.sherehe.pos",
+    "productName": "Sherehe POS",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "public/icon-512.png"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "public/icon-512.png",
+      "category": "public.app-category.business"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "public/icon-512.png",
+      "category": "Office"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Bar POS"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "YOUR_GITHUB_USER",
+        "repo": "bar-pos-cloud"
+      }
+    ]
+  }
+}

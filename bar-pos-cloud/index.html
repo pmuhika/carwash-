@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#151c2d" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Sherehe POS" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <title>Sherehe POS</title>
+    <style>
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        background: #151c2d;
+      }
+      #root {
+        min-height: 100%;
+      }
+      /* Offline boot splash while JS loads from cache */
+      #offline-boot {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: #151c2d;
+        color: #d4d9e5;
+        font-family: system-ui, sans-serif;
+        place-items: center;
+        text-align: center;
+        padding: 24px;
+        z-index: 9999;
+      }
+      #offline-boot.show { display: grid; }
+      #offline-boot .logo {
+        width: 64px; height: 64px; border-radius: 16px;
+        background: #f59e0b; margin: 0 auto 16px;
+        display: grid; place-items: center; font-size: 28px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="offline-boot">
+      <div>
+        <div class="logo">🍺</div>
+        <div style="font-weight:700;font-size:18px;margin-bottom:8px">Sherehe POS</div>
+        <div style="font-size:13px;opacity:.75">Loading offline…</div>
+      </div>
+    </div>
+    <div id="root"></div>
+    <script>
+      // Show splash only if page is slow (likely offline cache hit path)
+      var boot = document.getElementById("offline-boot");
+      var t = setTimeout(function () { if (boot) boot.classList.add("show"); }, 400);
+      window.addEventListener("load", function () {
+        clearTimeout(t);
+        if (boot) boot.classList.remove("show");
+      });
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

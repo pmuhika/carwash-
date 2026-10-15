@@ -1,0 +1,10 @@
+{
+  "appName": "Sherehe POS",
+  "shortName": "Sherehe",
+  "description": "Sherehe POS \u2014 bar point of sale for celebrations and nightlife",
+  "author": "Sherehe POS",
+  "appId": "com.sherehe.pos",
+  "iconFile": "public/icon-512.png",
+  "windowWidth": 1280,
+  "windowHeight": 800
+}
