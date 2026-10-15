@@ -35,6 +35,7 @@ import {
   idbGetMeta,
   migrateLocalStorageToIdb,
   requestBackgroundSync,
+  clearAllOfflineQueues,
   type OfflineSale as IdbOfflineSale,
   type OfflineStockReceipt,
 } from "./offlineDb";
@@ -160,13 +161,20 @@ type OfflineSale = {
 
 function loadOfflineQueue(): OfflineSale[] {
   try {
-    return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || "[]");
+    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY) || "[]";
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((s: any) => s && s.id && !s.synced) : [];
   } catch {
     return [];
   }
 }
 function saveOfflineQueue(q: OfflineSale[]) {
-  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q));
+  try {
+    const clean = (q || []).filter((s) => s && s.id && !s.synced);
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(clean));
+  } catch (e) {
+    console.error("saveOfflineQueue failed", e);
+  }
 }
 
 function cacheProducts(list: Product[]) {
@@ -682,19 +690,23 @@ useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
   }, [darkMode]);
 
-  // Online / offline detection + auto-sync pending sales (no reload required)
+  // Online / offline detection + BACKGROUND auto-sync (no reload required)
   useEffect(() => {
+    let cancelled = false;
+    const syncTimers: number[] = [];
+
     const runSyncSoon = (reason: string) => {
-      // Retry a few times — "online" often fires before the network is fully usable
-      const delays = [300, 1200, 3000, 8000];
+      // "online" often fires before DNS/socket are ready — staggered retries
+      const delays = [400, 1500, 4000, 10000, 20000];
       delays.forEach((ms) => {
-        window.setTimeout(() => {
-          if (!navigator.onLine) return;
+        const id = window.setTimeout(() => {
+          if (cancelled) return;
           void processOfflineQueueRef.current();
         }, ms);
+        syncTimers.push(id);
       });
       try {
-        console.debug("[barpos] schedule sync:", reason);
+        console.debug("[sherehe] schedule background sync:", reason);
       } catch {
         /* ignore */
       }
@@ -702,7 +714,7 @@ useEffect(() => {
 
     const goOnline = () => {
       setIsOnline(true);
-      flash("Back online — syncing queued sales…");
+      flash("Back online — syncing queued activity in the background…");
       runSyncSoon("window.online");
     };
     const goOffline = () => setIsOnline(false);
@@ -711,14 +723,38 @@ useEffect(() => {
     setIsOnline(navigator.onLine);
 
     void (async () => {
-      await migrateLocalStorageToIdb();
-      const sales = await idbLoadSalesQueue();
-      const stock = await idbLoadStockQueue();
-      if (sales.length) setPendingSales(sales);
+      try {
+        await migrateLocalStorageToIdb();
+      } catch {
+        /* ignore */
+      }
+      // Start afresh: drop any old stuck pending sync once after this update
+      try {
+        if (localStorage.getItem("barpos_cleared_pending_v3") !== "1") {
+          await clearAllOfflineQueues();
+          localStorage.setItem("barpos_cleared_pending_v3", "1");
+          setPendingSales([]);
+          setPendingStock([]);
+        }
+      } catch {
+        /* ignore */
+      }
+      const sales = await idbLoadSalesQueue().catch(() => [] as OfflineSale[]);
+      const stock = await idbLoadStockQueue().catch(() => [] as OfflineStockReceipt[]);
+      // Merge localStorage queue if IDB empty
+      let salesMerged = sales;
+      if (!salesMerged.length) {
+        try {
+          salesMerged = loadOfflineQueue().filter((s) => !s.synced);
+        } catch {
+          salesMerged = [];
+        }
+      }
+      if (salesMerged.length) setPendingSales(salesMerged);
       if (stock.length) setPendingStock(stock);
-      const ls = await idbGetMeta<string>("last_sync_at");
+      const ls = await idbGetMeta<string>("last_sync_at").catch(() => null);
       if (ls) setLastSyncAt(ls);
-      if (navigator.onLine && (sales.length || stock.length)) {
+      if (navigator.onLine && (salesMerged.length || stock.length)) {
         runSyncSoon("startup-pending");
       }
     })();
@@ -728,31 +764,64 @@ useEffect(() => {
     };
     navigator.serviceWorker?.addEventListener?.("message", onMsg);
 
-    // Visibility / focus: user returns to the till with internet restored
     const onVis = () => {
-      if (document.visibilityState === "visible" && navigator.onLine) {
-        runSyncSoon("visibility");
-      }
+      if (document.visibilityState === "visible") runSyncSoon("visibility");
     };
-    const onFocus = () => {
-      if (navigator.onLine) runSyncSoon("focus");
-    };
+    const onFocus = () => runSyncSoon("focus");
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("focus", onFocus);
 
-    // Periodic catch-up while the app stays open
-    const interval = window.setInterval(() => {
-      if (!navigator.onLine) return;
+    // Heartbeat: detect real connectivity even if browser misses "online" event
+    const heartbeat = window.setInterval(async () => {
+      if (cancelled) return;
+      const browserOnline = typeof navigator !== "undefined" && navigator.onLine;
+      if (!browserOnline) {
+        setIsOnline(false);
+        return;
+      }
+      // Probe cloud — if reachable, mark online and sync any queue
+      try {
+        const url = (import.meta as any).env?.VITE_SUPABASE_URL as string | undefined;
+        if (url) {
+          const ctrl = new AbortController();
+          const t = window.setTimeout(() => ctrl.abort(), 4000);
+          await fetch(url + "/auth/v1/health", {
+            method: "GET",
+            signal: ctrl.signal,
+            cache: "no-store",
+          }).catch(() =>
+            fetch(url + "/rest/v1/", {
+              method: "HEAD",
+              signal: ctrl.signal,
+              cache: "no-store",
+            }),
+          );
+          window.clearTimeout(t);
+        }
+        setIsOnline(true);
+        void processOfflineQueueRef.current();
+      } catch {
+        // Still browser-online but cloud unreachable — keep trying later
+        setIsOnline(browserOnline);
+      }
+    }, 15000);
+
+    // Faster queue drain while items are pending
+    const queueTick = window.setInterval(() => {
+      if (cancelled || !navigator.onLine) return;
       void processOfflineQueueRef.current();
-    }, 20000);
+    }, 8000);
 
     return () => {
+      cancelled = true;
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
       navigator.serviceWorker?.removeEventListener?.("message", onMsg);
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("focus", onFocus);
-      window.clearInterval(interval);
+      window.clearInterval(heartbeat);
+      window.clearInterval(queueTick);
+      syncTimers.forEach((id) => window.clearTimeout(id));
     };
   }, []);
 
@@ -1879,8 +1948,14 @@ useEffect(() => {
         note,
         user_id: profile?.id || session?.user?.id || "",
       };
+      // Persist to localStorage + IndexedDB + desktop file (await before continuing)
       const q = await idbAddStockReceipt(row);
       setPendingStock(q);
+      try {
+        localStorage.setItem("barpos_offline_stock", JSON.stringify(q));
+      } catch {
+        /* */
+      }
       flash("Stock received offline — will sync when online");
       requestBackgroundSync("barpos-sync");
       setBusy(false);
@@ -2128,7 +2203,8 @@ useEffect(() => {
     cost = cart.reduce((n, x) => n + x.qty * Number(x.product.cost_price), 0);
   /** Replay offline sales + stock receipts when connection returns (conflict-aware) */
   async function processOfflineQueue() {
-    if (!supabase || !navigator.onLine) return;
+    if (!supabase) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) return;
     if (syncLockRef.current) return;
     syncLockRef.current = true;
     setSyncingQueue(true);
@@ -2137,19 +2213,22 @@ useEffect(() => {
     let stockSynced = 0;
     let conflicts = 0;
 
-    // Ensure we have a real cloud session (offline login only updates React state)
+    // Ensure real cloud JWT is on the Supabase client (offline UI session is not enough)
     try {
-      if (session && isOfflineSession(session)) {
-        const { data } = await supabase.auth.getSession();
-        if (data.session && !isOfflineSession(data.session as any)) {
-          setSession(data.session);
+      const { data } = await supabase.auth.getSession();
+      const live = data.session;
+      if (live && !isOfflineSession(live as any)) {
+        if (!session || isOfflineSession(session)) {
+          setSession(live);
         }
-      } else if (!session) {
-        const { data } = await supabase.auth.getSession();
-        if (data.session) setSession(data.session);
+      } else if (session && isOfflineSession(session)) {
+        // Cannot push to cloud with offline-only login — leave queue intact
+        setSyncingQueue(false);
+        syncLockRef.current = false;
+        return;
       }
     } catch {
-      /* continue — RPC may still work if client has stored JWT */
+      /* continue — client may still have a stored refresh token */
     }
 
     // --- Sales ---
@@ -2339,9 +2418,15 @@ useEffect(() => {
           return { ...p, stock_qty: Math.max(0, Number(p.stock_qty) - qty) };
         }),
       );
-      const nextQueue = [...loadOfflineQueue(), offlineSale];
+      const nextQueue = [...loadOfflineQueue().filter((s) => !s.synced), offlineSale];
+      // Sync localStorage FIRST so close-app cannot lose the sale
       saveOfflineQueue(nextQueue);
       setPendingSales(nextQueue);
+      try {
+        await idbSaveSalesQueue(nextQueue);
+      } catch (e) {
+        console.error("offline sale persist failed", e);
+      }
       // Keep products cache in sync
       cacheProducts(
         products.map((p) => {
@@ -2367,7 +2452,6 @@ useEffect(() => {
       setCreditor("");
       setPayment("cash");
       flash("Sale saved offline — will sync when internet returns");
-      void idbSaveSalesQueue(nextQueue);
       requestBackgroundSync("barpos-sync");
       setBusy(false);
       return;
@@ -2849,8 +2933,17 @@ useEffect(() => {
         localStorage.removeItem(CACHE_PRODUCTS_KEY);
         localStorage.removeItem(CACHE_SETTINGS_KEY);
         localStorage.removeItem(CACHE_TS_KEY);
+        localStorage.removeItem(CACHE_PROFILE_KEY);
         localStorage.removeItem(OFFLINE_QUEUE_KEY);
+        localStorage.removeItem("barpos_offline_sales");
+        localStorage.removeItem("barpos_offline_stock");
         localStorage.removeItem("barpos_favorites");
+      } catch {
+        /* ignore */
+      }
+      // Wipe pending offline queues everywhere (LS + IndexedDB + desktop files)
+      try {
+        await clearAllOfflineQueues();
       } catch {
         /* ignore */
       }
@@ -2865,9 +2958,11 @@ useEffect(() => {
       setStockMovements([]);
       setAdminNotifications([]);
       setPendingSales([]);
+      setPendingStock([]);
       setCart([]);
       setHeldSales([]);
       setReceipt(null);
+      setSyncConflicts(0);
 
       setFactoryResetOpen(false);
       setFactoryPassword("");

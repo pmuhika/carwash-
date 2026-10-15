@@ -11,6 +11,15 @@ const fs = require("fs");
 
 const isDev = !app.isPackaged;
 
+// Required on some Linux setups and when running as root / in CI
+try {
+  app.commandLine.appendSwitch("no-sandbox");
+  app.commandLine.appendSwitch("disable-gpu-sandbox");
+} catch {
+  /* ignore */
+}
+
+
 let brand = {
   appName: "Bar POS",
   shortName: "Bar POS",
@@ -181,7 +190,7 @@ function createWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      sandbox: false,
     },
     icon: iconPath(),
   });
@@ -217,11 +226,47 @@ function createWindow() {
     return { action: "deny" };
   });
 
+  // Load UI
+  const devUrl = process.env.VITE_DEV_SERVER_URL || "http://127.0.0.1:5173";
+  const distIndex = path.join(__dirname, "..", "dist", "index.html");
+
   if (isDev) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL || "http://127.0.0.1:5173");
+    // Prefer Vite dev server; fall back to built dist if server is down
+    const tryDev = () => {
+      mainWindow.loadURL(devUrl).catch(() => {
+        if (fs.existsSync(distIndex)) {
+          mainWindow.loadFile(distIndex);
+        } else {
+          dialog.showErrorBox(
+            brand.appName || "Sherehe POS",
+            "Dev server is not running and dist/ is missing.\n\nRun:\n  npm run desktop:dev\nor:\n  npm run build && npm run desktop",
+          );
+        }
+      });
+    };
+    tryDev();
   } else {
-    mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    if (!fs.existsSync(distIndex)) {
+      dialog.showErrorBox(
+        brand.appName || "Sherehe POS",
+        "App files missing (dist/index.html).\nReinstall the application or rebuild with:\n  npm run desktop:build",
+      );
+    } else {
+      mainWindow.loadFile(distIndex).catch((err) => {
+        dialog.showErrorBox(
+          brand.appName || "Sherehe POS",
+          "Could not open the app UI:\n" + (err && err.message ? err.message : String(err)),
+        );
+      });
+    }
   }
+
+  mainWindow.webContents.on("did-fail-load", (_e, code, desc, url) => {
+    console.error("did-fail-load", code, desc, url);
+    if (isDev && String(url || "").includes("5173")) {
+      if (fs.existsSync(distIndex)) mainWindow.loadFile(distIndex);
+    }
+  });
 
   const name = brand.appName || "Bar POS";
   const template = [
@@ -299,6 +344,40 @@ function createWindow() {
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
+
+
+// Durable offline queue on disk (survives app close)
+function queueFile(key) {
+  const safe = String(key || "queue").replace(/[^a-z0-9_-]/gi, "");
+  return path.join(app.getPath("userData"), `offline-${safe}.json`);
+}
+ipcMain.handle("barpos:queue-read", async (_e, key) => {
+  try {
+    const f = queueFile(key);
+    if (!fs.existsSync(f)) return [];
+    const raw = fs.readFileSync(f, "utf8");
+    const data = JSON.parse(raw);
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.warn("queue-read", err && err.message);
+    return [];
+  }
+});
+ipcMain.handle("barpos:queue-write", async (_e, key, data) => {
+  try {
+    const f = queueFile(key);
+    const dir = path.dirname(f);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const payload = Array.isArray(data) ? data : [];
+    const tmp = f + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(payload), "utf8");
+    fs.renameSync(tmp, f);
+    return true;
+  } catch (err) {
+    console.warn("queue-write", err && err.message);
+    return false;
+  }
+});
 
 ipcMain.handle("barpos:print-html", async (_event, html, options) => {
   try {

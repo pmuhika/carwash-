@@ -1,113 +1,72 @@
-# Bar POS — Real installable desktop software
+# Sherehe POS — Desktop app (Windows / Mac / Linux)
 
-Install on a PC like normal software. Customize **name** and **logo**, then build an installer (`.exe` on Windows).
+## Why the window did not open before (fixed in this package)
 
-## What you get
+1. **Asset paths** — web build used absolute `/assets/...` paths. Electron loads files from disk, so those broke. Desktop builds now use **relative** paths (`./assets/...`).
+2. **`npm run desktop` alone** — opens Electron without the UI server and without a built `dist/`. Use **`npm run desktop:dev`** (dev) or build first.
+3. **`"type": "module"`** in package.json — removed so Electron’s CommonJS main process loads cleanly.
+4. **Linux / sandbox** — Electron now starts with `--no-sandbox` where needed so the process does not exit immediately.
 
-- A real Windows installer (or Mac/Linux package)
-- Start Menu / desktop shortcut with **your** app name
-- **Your** logo as the app icon
-- Same features as the web app (sell, stock, offline queue, cloud sync)
+## Quick start (Windows)
 
-## 1. Install Node.js (once per PC you build on)
+### 1. Install Node.js 20 LTS
+https://nodejs.org → install → restart the PC if asked.
 
-Download **Node.js 20 LTS** from https://nodejs.org and install it.
+### 2. Unzip this project
+Open the `bar-pos-cloud` folder in **Command Prompt**:
+- Open the folder → click the address bar → type `cmd` → Enter
 
-## 2. Open the project
-
-Unzip the project folder. Open a terminal **in that folder** (where `package.json` is).
-
-```bash
+### 3. Install dependencies
+```bat
 npm install
 ```
 
-## 3. Choose your name and logo
-
-Edit the file **`branding.json`**:
-
-```json
-{
-  "appName": "Safari Lounge POS",
-  "shortName": "Safari POS",
-  "description": "Point of sale for Safari Lounge",
-  "author": "Safari Lounge",
-  "appId": "com.safarilounge.pos",
-  "iconFile": "public/icon-512.png",
-  "windowWidth": 1280,
-  "windowHeight": 800
-}
-```
-
-| Field | Meaning |
-|--------|---------|
-| `appName` | Name on the window title, installer, and Start Menu |
-| `shortName` | Shortcut name |
-| `iconFile` | Path to your logo (PNG, ideally **512×512** pixels) |
-| `appId` | Unique id (change `yourbar` to your bar name, lowercase, no spaces) |
-
-**To use your own logo:** put a PNG file in the project, e.g. `public/my-logo.png`, then set:
-
-```json
-"iconFile": "public/my-logo.png"
-```
-
-Apply branding:
-
-```bash
+### 4. Apply logo / name
+```bat
 npm run brand
 ```
 
-## 4. Build the installer (Windows)
+### 5A. Try the app (development — recommended first test)
+```bat
+npm run desktop:dev
+```
+This starts Vite **and** Electron together. A window should open with Sherehe POS.
 
-```bash
+### 5B. Build a real Windows installer
+```bat
 npm run desktop:build:win
 ```
+When finished, open the **`release`** folder and run:
+`Sherehe POS Setup ….exe`
 
-When it finishes, open the **`release`** folder. You should see something like:
+Install on the till, then open **Sherehe POS** from the Start Menu.
 
-`Safari Lounge POS Setup 1.9.6.exe`
+## Other useful commands
 
-## 5. Install on the till computer
+| Command | What it does |
+|---------|----------------|
+| `npm run desktop:dev` | Dev mode (Vite + Electron) — **use this to test** |
+| `npm run build:electron` or `node scripts/build-electron.cjs` | Build UI for Electron only |
+| `npm run desktop:build:win` | Brand + build UI + Windows installer |
+| `npm run desktop` | Electron only (needs `dist/` already built, or Vite running) |
 
-1. Copy the `.exe` to the bar PC  
-2. Double-click → install (Next, Next, Finish)  
-3. Open the app from the Start Menu  
-4. Sign in **once with internet** (loads products)  
-5. After that it works **offline**; sales sync when internet returns  
+## If the window is blank
 
-## Other platforms
+1. Run `npm run desktop:dev` (not only `npm run desktop`).
+2. Or run:
+   ```bat
+   node scripts/build-electron.cjs
+   npm run desktop
+   ```
+3. Press **Ctrl+Shift+I** in the app → Console tab → send any red errors if it still fails.
 
-```bash
-npm run desktop:build:mac     # Mac .dmg
-npm run desktop:build:linux   # Linux AppImage
-```
+## Updates
 
-## Test without building an installer
-
-```bash
-npm run dev          # terminal 1
-npm run desktop      # terminal 2 — opens the window
-```
+- **Sales / stock / products** sync from Supabase automatically.
+- **New features / UI** need a **new desktop build** (or GitHub Releases auto-update when configured).
 
 ## Notes
 
-- Build the Windows installer on a **Windows** PC for best results.  
-- Windows may warn about an unsigned app → More info → Run anyway.  
-- The app still uses your Supabase cloud for multi-device sync; offline selling is built in.  
-- Inside the app you can still change bar name / logo URL under **Backup & Settings** (receipt branding). The desktop **icon and installer name** come only from `branding.json`.
-
-## Printer (thermal / receipt)
-
-The desktop app prints through **Windows (or Mac) printer drivers**.
-
-1. Install your thermal printer with the manufacturer driver (or Generic / Text-Only).
-2. In Windows: **Settings → Bluetooth & devices → Printers** — confirm it appears.
-3. Optional: set it as the **default** printer.
-4. In Bar POS, complete a sale → the system print dialog opens → choose the thermal printer → Print.
-5. Paper width: in the app go to **Backup & Settings** → receipt paper **80mm** or **58mm**.
-
-### If print does nothing after install on a new PC
-- Rebuild/install the **latest** desktop package (v1.9.7+). Older builds blocked receipt popups.
-- Menu **File → Print test page…** should open the system dialog.
-- Do not block the print dialog; choose the thermal printer once.
-- USB printers must be plugged in before opening the app; network printers must be online.
+- Build the Windows `.exe` on a **Windows** PC when possible.
+- Windows SmartScreen may warn on unsigned apps → More info → Run anyway.
+- Keep `.env` with your Supabase URL and anon key before building.

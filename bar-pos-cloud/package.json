@@ -1,22 +1,23 @@
 {
   "name": "bar-pos-cloud",
   "private": true,
-  "version": "2.0.1",
-  "description": "Sherehe POS \u2014 desktop and web bar point of sale",
-  "author": "Bar POS",
-  "type": "module",
+  "version": "2.0.2",
+  "description": "Sherehe POS \u2014 pub, bar & restaurant point of sale",
+  "author": "Sherehe POS",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
+    "build:electron": "node scripts/build-electron.cjs",
     "preview": "vite preview --host 0.0.0.0",
     "desktop": "electron .",
-    "desktop:dev": "electron .",
-    "desktop:build": "node scripts/apply-branding.mjs && vite build && electron-builder",
-    "desktop:build:win": "node scripts/apply-branding.mjs && vite build && electron-builder --win",
-    "desktop:build:mac": "node scripts/apply-branding.mjs && vite build && electron-builder --mac",
-    "desktop:build:linux": "node scripts/apply-branding.mjs && vite build && electron-builder --linux",
-    "brand": "node scripts/apply-branding.mjs"
+    "desktop:dev": "node scripts/desktop-dev.cjs",
+    "desktop:build": "node scripts/apply-branding.mjs && node scripts/build-electron.cjs && electron-builder",
+    "desktop:build:win": "node scripts/apply-branding.mjs && node scripts/build-electron.cjs && electron-builder --win",
+    "desktop:build:mac": "node scripts/apply-branding.mjs && node scripts/build-electron.cjs && electron-builder --mac",
+    "desktop:build:linux": "node scripts/apply-branding.mjs && node scripts/build-electron.cjs && electron-builder --linux",
+    "brand": "node scripts/apply-branding.mjs",
+    "postinstall": "electron-builder install-app-deps || true"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
@@ -44,6 +45,9 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "public/icon-*.png",
+      "public/sherehe-logo.png",
+      "branding.json",
       "package.json"
     ],
     "win": {
@@ -69,7 +73,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "Bar POS"
+      "shortcutName": "Sherehe"
     },
     "publish": [
       {
@@ -77,6 +81,7 @@
         "owner": "YOUR_GITHUB_USER",
         "repo": "bar-pos-cloud"
       }
-    ]
+    ],
+    "asar": true
   }
 }
